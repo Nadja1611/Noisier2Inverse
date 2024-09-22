@@ -101,8 +101,8 @@ class Walnut(Dataset):
             """ In that case, we add the gaussian noise in the sinogram, then noise is uncorrelated in sino domain """
             clean /= np.max(clean, axis = (-1,-2))
             clean_sino = np.array((create_noisy_sinograms(np.expand_dims(clean,0), 512, 0)).squeeze(0))
-            noisy = np.asarray(add_gaussian_noise(clean_sino, self.noise_intensity))
-            noisier = np.asarray(add_gaussian_noise(noisy, self.noise_intensity))
+            noisy = np.asarray(add_correlated_noise(clean_sino, self.noise_intensity))
+            noisier = np.asarray(add_correlated_noise(noisy, self.noise_intensity))
             del(clean_sino)
 
         elif self.noise_type == 'gauss_image':
