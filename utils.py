@@ -38,16 +38,14 @@ def sobolev_norm(f, g):
     derivatives_g1 = torch.gradient(g, axis=(2, 3))[0]
     derivatives_g2 = torch.gradient(g, axis=(2, 3))[1]
 
-    derivatives_diff1 = derivatives_f1 - derivatives_g1
-    derivatives_diff2 = derivatives_f2 - derivatives_g2
-    
-    sum_der_diff = (derivatives_diff1**2 + derivatives_diff2**2)**0.5
 
 
-    l2_grad = torch.nn.functional.mse_loss(derivatives_s1, derivatives_s2)
+
+    l2_grad1 = torch.nn.functional.mse_loss(derivatives_f1, derivatives_g1)
+    l2_grad2 = torch.nn.functional.mse_loss(derivatives_f2, derivatives_g2)
     # print("gradient term is: " + str(l2_grad))
     # print("l2 term is: " + str(l2))
-    sobolev = (l2**2 + l2_grad**2) / im_size**2
+    sobolev = (l2 + l2_grad1 + l2_grad2) 
     return sobolev
 
 
