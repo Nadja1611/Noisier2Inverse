@@ -43,11 +43,11 @@ def get_images(path, amount_of_images='all', scale_number=1):
 
 
 class Walnut(Dataset):
-    def __init__(self, data_dir="/home/nadja/tomo_project/Data/"
-, noise_type='salt_and_pepper', noise_intensity=0.05, train=True, transform=None):
+    def __init__(self, data_dir=None, noise_type='salt_and_pepper', noise_intensity=None, noise_sigma = None, train=True, transform=None):
         super(Walnut, self).__init__()
 
         self.noise_intensity = noise_intensity
+        self.noise_sigma = noise_sigma
         self.noise_type = noise_type
 
  
@@ -94,15 +94,23 @@ class Walnut(Dataset):
 
     def __getitem__(self, index):
         clean_path = self.clean_paths[index]
-        clean = np.array(cv.imread(clean_path, cv.IMREAD_GRAYSCALE),dtype=np.float16)
-        
+        print(self.clean_paths,flush =True)
+        print(clean_path, flush = True)
+        if clean_path.endswith('.png'):
+            clean = np.array(cv.imread(clean_path, cv.IMREAD_GRAYSCALE),dtype=np.float16)
+        elif clean_path.endswith('.pt'):
+            clean = torch.load(clean_path)
+            cleani = np.zeros_like(clean)
+            cleani[80:-80, 45:-45] = clean[80:-80, 45:-45]
+            clean = cleani
         
         if self.noise_type == 'gauss':
             """ In that case, we add the gaussian noise in the sinogram, then noise is uncorrelated in sino domain """
             clean /= np.max(clean, axis = (-1,-2))
             clean_sino = np.array((create_noisy_sinograms(np.expand_dims(clean,0), 512, 0)).squeeze(0))
-            noisy = np.asarray(add_correlated_noise(clean_sino, self.noise_intensity))
-            noisier = np.asarray(add_correlated_noise(noisy, self.noise_intensity))
+            noisy = np.asarray(add_correlated_noise(clean_sino, self.noise_intensity, self.noise_sigma))
+            noisier = np.asarray(add_correlated_noise(noisy, self.noise_intensity, self.noise_sigma))
+            noise = clean_sino - noisy
             del(clean_sino)
 
         elif self.noise_type == 'gauss_image':
@@ -137,8 +145,8 @@ class Walnut(Dataset):
         if self.noise_type == "salt_and_pepper":
             return {'clean': clean, 'noisy': noisy, 'noisier': noisier}
         elif self.noise_type == "gauss" or self.noise_type == "gauss_image":
-            return {'clean': clean, 'noisy': noisy, 'noisier': noisier}
-            del(clean, noisy, noisier)
+            return {'clean': clean, 'noisy': noisy, 'noisier': noisier, 'noise': noise}
+            del(clean, noisy, noisier, noise)
         else:
             raise NotImplementedError('wrong type of noise')
     def __len__(self):
@@ -147,16 +155,3 @@ class Walnut(Dataset):
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-# %%
