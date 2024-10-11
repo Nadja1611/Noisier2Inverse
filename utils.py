@@ -10,7 +10,7 @@ import cv2 as cv
 
 
 def is_image_file(filename):
-    extensions = [".jpg", ".JPG", ".jpeg", ".JPEG", ".png", ".PNG", ".tif", ".TIF"]
+    extensions = [".jpg", ".JPG", ".jpeg",".pt",".pth", ".JPEG", ".png", ".PNG", ".tif", ".TIF"]
     return any(filename.endswith(extension) for extension in extensions)
 
 
@@ -38,13 +38,8 @@ def sobolev_norm(f, g):
     derivatives_g1 = torch.gradient(g, axis=(2, 3))[0]
     derivatives_g2 = torch.gradient(g, axis=(2, 3))[1]
 
-
-
-
     l2_grad1 = torch.nn.functional.mse_loss(derivatives_f1, derivatives_g1)
     l2_grad2 = torch.nn.functional.mse_loss(derivatives_f2, derivatives_g2)
-    # print("gradient term is: " + str(l2_grad))
-    # print("l2 term is: " + str(l2))
     sobolev = (l2 + l2_grad1 + l2_grad2) 
     return sobolev
 
@@ -105,9 +100,9 @@ def add_gaussian_noise(img, sigma):
 
 import scipy.ndimage
 """ function for generating correlated noise """
-def add_correlated_noise(img, sigma):
+def add_correlated_noise(img, intensity, sigma):
     # Step 1: Generate random white noise
-    noise = np.random.normal(0, 3, img.shape)
+    noise = np.random.normal(0, intensity, img.shape)
     # Step 2: Apply Gaussian filter to introduce spatial correlation
     max_img = np.max(img)  # Ensure this is a scalar
     correlated_noise = scipy.ndimage.gaussian_filter(noise, sigma=sigma)
