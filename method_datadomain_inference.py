@@ -14,7 +14,7 @@ import skimage.metrics as skm
 from skimage.data import shepp_logan_phantom
 import logging
 import numpy as np
-
+from scipy.stats import wasserstein_distance
 from tqdm import tqdm
 from model import *
 from torch.optim import lr_scheduler
@@ -25,11 +25,13 @@ import skimage
 import argparse
 import gc
 from scipy.ndimage import gaussian_filter
-from dataset import *
+from dataset_EMD import *
 from utils_inverse import create_noisy_sinograms
+from matplotlib.ticker import MaxNLocator
 import psutil
 
-# %%
+
+
 parser = argparse.ArgumentParser(
     description="Arguments for denoising network.", add_help=False
 )
@@ -58,8 +60,15 @@ parser.add_argument(
     "-batch_size",
     "--batch_size",
     type=int,
-    help="number of prosqueuejection angles sinogram",
-    default=16,
+    help="number of projection angles sinogram",
+    default=6,
+)
+parser.add_argument(
+    "-datadir",
+    "--datadir",
+    type=str,
+    help="from where should the data be loaded",
+    default='/home/nadja/tomo_project/Data_CT',
 )
 parser.add_argument(
     "-lr",
@@ -72,29 +81,44 @@ parser.add_argument(
     "-noise_type",
     "--noise_type",
     type=str,
-    help="add correlated or uncorrelated noise",
+    help="add correlated or uncorrelated noised",
     default="uncorrelated",
 )
 parser.add_argument(
     "-noise_intensity",
     "--noise_intensity",
     type=float,
-    help="how intense should salt and pepper noise be",
-    default=0.05,
+    help="how intense is the gaussian/poisson noise",
+    default=1.0,
+)
+parser.add_argument(
+    "-noise_sigma",
+    "--noise_sigma",
+    type=float,
+    help="how big is the kernel size of convolution",
+    default=3.0,
 )
 parser.add_argument(
     "-o",
     "--logdir",
     type=str,
     help="directory for log files",
-    default="/home/nadja/nadja/tomo_project/LION/logs",
+    default="/home/nadja/tomo_project/LION/logs/",
 )
 parser.add_argument(
     "-w",
     "--weights_dir",
     type=str,
     help="directory to save model weights",
-    default="/home/nadja/tomo_project/LION/Noise2Inverse/Model_Weights",
+    default="/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Model_Weights/",
+)
+
+parser.add_argument(
+    "-out",
+    "--outputdir",
+    type=str,
+    help="directory where results are saved",
+    default="/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/",
 )
 
 args = parser.parse_args()
@@ -114,6 +138,8 @@ weights_dir = (
     + args.noise_type
     + "_"
     + str(args.noise_intensity)
+        + "_sigma_"
+    + str(args.noise_sigma)
     + "_batchsize_"
     + str(args.batch_size)
     + "_"
@@ -131,6 +157,8 @@ if not os.path.exists(weights_dir):
 
 device = "cuda:0"
 
+print(args.datadir, flush = True)
+
 
 class Noiser2NoiseRecon:
     def __init__(
@@ -147,14 +175,18 @@ class Noiser2NoiseRecon:
         # speicift noise type and intensity
         self.noise = args.noise_type
         self.noise_intensity = args.noise_intensity
+        self.noise_sigma = args.noise_sigma
 
         # Dataset
         self.train_dataset = Walnut(
-            noise_type=self.noise, noise_intensity=self.noise_intensity, train=True
+            noise_type=self.noise, noise_intensity=self.noise_intensity, noise_sigma = self.noise_sigma, train=True, data_dir = args.datadir
         )
+        print(self.train_dataset.clean_paths,flush = True)
         self.test_dataset = Walnut(
-            noise_type=self.noise, noise_intensity=self.noise_intensity, train=False
+            noise_type=self.noise, noise_intensity=self.noise_intensity, noise_sigma = self.noise_sigma, train=False, data_dir = args.datadir
         )
+
+
         self.train_dataloader = DataLoader(
             self.train_dataset,
             batch_size=self.batch_size,
@@ -167,7 +199,7 @@ class Noiser2NoiseRecon:
             batch_size=self.batch_size,
             shuffle=False,
             pin_memory=True,
-            num_workers=0,
+            num_workers = 0,
         )
 
     def forward(self, reconstruction):
@@ -182,7 +214,7 @@ class Noiser2NoiseRecon:
         return output_denoising_reco, output_denoising_sino
 
     def compute_reconstructions(self, sinograms):
-        sinograms = sinograms.squeeze()  # .detach().cpu()
+        sinograms = sinograms.squeeze(1)  # .detach().cpu()
 
         Reconstructions = torch.zeros(
             (sinograms.shape[0], self.folds, sinograms.shape[-2], sinograms.shape[-2]),
@@ -198,7 +230,6 @@ class Noiser2NoiseRecon:
                 folds=1,
             )
         del sinograms
-        gc.collect()
         return Reconstructions
 
     def projection_tomosipo(self, img, sino, translate=False):
@@ -234,16 +265,16 @@ class Noiser2NoiseRecon:
         result = result.unsqueeze(1)
         del (sino, op, angles, geo)
 
-        gc.collect()
         return result
 
 
 #### generate a new output path where the results are stored!
-newpath = (
-    r"/home/nadja/tomo_project/LION/Results_September_new/Noise_"
+newpath = (args.outputdir + "/Noise_"
     + args.noise_type
     + "_"
     + str(args.noise_intensity)
+    + "_sigma_"
+    + str(args.noise_sigma)
     + "_batchsize_"
     + str(args.batch_size)
     + "_"
@@ -261,7 +292,7 @@ if not os.path.exists(newpath):
 
 
 ###### specifiy training parameters
-N_epochs = 6000
+N_epochs = 10000
 learning_rate = args.learning_rate
 
 
@@ -280,50 +311,46 @@ all_ssim_z = torch.tensor([])
 all_psnr_y = torch.tensor([])
 all_psnr_z = torch.tensor([])
 
+all_emd_z = torch.tensor([])
+all_emd_y = torch.tensor([])
+
 old_psnr = 0.1
 old_ssim = 0.1
 old_psnr_y = 0.1
 old_ssim_y = 0.1
+old_emd_y = 10000
+old_emd_z = 10000
+
 
 for epoch in range(N_epochs):
+    print('We are at epoch: ' + str(epoch), flush = True)
     running_loss = 0
     running_L2_loss = 0
+    torch.cuda.empty_cache()
 
     # (N2NR.train_dataloader, desc='Epoch {}'.format(epoch)) as tepoch:
     for batch, data in enumerate(N2NR.train_dataloader):
         N2NR.net_denoising.train()
-        if args.noise_type == "salt_and_pepper":
-            ### if salt and pepper noise is chosen, then the noise is added in the recon domain, and that dataloader reads in the noisy recons
-            clean, noisy, noisier = data["clean"], data["noisy"], data["noisier"]
-            y = torch.tensor(
-                create_noisy_sinograms(np.array(noisy[:].squeeze()), N2NR.angles, 0)
-            )
-            z = torch.tensor(
-                create_noisy_sinograms(np.array(noisier[:].squeeze()), N2NR.angles, 0)
-            )
-            clean, noisy, noisier = (
-                clean,
-                noisy.to(N2NR.device),
-                noisier.to(N2NR.device),
-            )
-        else:
-            ### if gauss noise is chosen, then the noise is added in the data domain, and that dataloader reads in the noisy sinos
-            clean, y, z = (
-                data["clean"].squeeze(),
-                data["noisy"].squeeze(),
-                data["noisier"].squeeze(),
-            )
+        clean, y, z = (
+            data["clean"].squeeze(),
+            data["noisy"].squeeze(),
+            data["noisier"].squeeze(),
+        )
+
+        if len(y.shape) < 3:
+            y = y.unsqueeze(0)
             y = y.unsqueeze(1)
+            clean = clean.unsqueeze(0)
+
+        if len(z.shape) < 3:
+            z = z.unsqueeze(0)
             z = z.unsqueeze(1)
 
-        if epoch % 1000 == 0:
-            with torch.no_grad():
-                plt.subplot(1, 2, 1)
-                plt.imshow(z[0][0], cmap="gray")
-                plt.subplot(1, 2, 2)
-                plt.imshow(y[0][0], cmap="gray")
-                plt.savefig(newpath + "/" + "sinograms" + ".png")
-                plt.close()
+        else:
+            y = y.unsqueeze(1)
+            z = z.unsqueeze(1)                      
+
+
 
         # generate recos from noisier data, z in the paper is the noisier sinogram
         z_reco = N2NR.compute_reconstructions(z.to(device))
@@ -335,7 +362,7 @@ for epoch in range(N_epochs):
         y = y.to(device)
         z = z.to(device)
 
-        if epoch % 1000 == 0:
+        if epoch % 200 == 0:
             with torch.no_grad():
                 plt.subplot(1, 2, 1)
                 plt.imshow(z_reco[0][0].detach().cpu(), cmap="gray")
@@ -348,7 +375,7 @@ for epoch in range(N_epochs):
         if epoch != 10 and epoch % 2000 != 0:
             del output_reco
         output_sino = output_sino + z.detach()
-        if args.loss_variant == "DataDomain_MSE_Inference_Sobolev":
+        if args.loss_variant == "DataDomain_MSE_Inference_EMD_Sobolev":
             loss = sobolev_norm(output_sino.float(), 2 * y.float().detach())
 
         else:
@@ -361,18 +388,10 @@ for epoch in range(N_epochs):
         N2NR_optimizer.step()
         with torch.no_grad():
             running_loss += loss.item()
-    gc.collect()
+    torch.cuda.empty_cache()
 
-    if epoch == 10:
-        plt.figure()
-        plt.subplot(1, 3, 1)
-        plt.imshow(output_reco.detach().cpu()[0, 0])
-        plt.subplot(1, 3, 2)
-        plt.imshow(output_sino.detach().cpu()[0, 0])
-        plt.subplot(1, 3, 3)
-        plt.imshow(z_reco.detach().cpu()[0, 0])
-        plt.savefig(newpath + "/dataset.png")
-        plt.close()
+
+
 
     if epoch % 2000 == 0:
         with torch.no_grad():
@@ -399,7 +418,7 @@ for epoch in range(N_epochs):
     del (output_sino, clean, z_reco)
     del (z, y, y_reco)
 
-    if epoch % 4 == 0:
+    if epoch % 6 == 0:
         MSEs = []
         ssim_y = []
         ssim_z = []
@@ -409,11 +428,13 @@ for epoch in range(N_epochs):
         psnr_z = []
         psnr_cor = []
         psnr_y_cor = []
+        emd_z = []
+        emd_y = []
 
         with torch.no_grad():
             N2NR.net_denoising.eval()
 
-            for batch, data in enumerate(N2NR.test_dataloader):
+            for batch, data in tqdm(enumerate(N2NR.test_dataloader)):
                 #### apply gassian noise a second time to make the sinogram even noisier
                 if args.noise_type == "salt_and_pepper":
                     clean_test, noisy_test, noisier_test = (
@@ -437,15 +458,30 @@ for epoch in range(N_epochs):
                         noisier_test.to(N2NR.device),
                     )
                 else:
-                    clean_test, y_test, z_test = (
+                    clean_test, y_test, z_test, noise_test = (
                         data["clean"].squeeze(),
                         data["noisy"].squeeze(),
                         data["noisier"].squeeze(),
+                        data["noise"].squeeze(),
                     )
+                    
+                #y_test = y_test.unsqueeze(1)
+                # y_test = torch.moveaxis(y_test, -1, -2)
+                #z_test = z_test.unsqueeze(1)
+                # z_test = torch.moveaxis(z_test, -1, -2)
+                if len(y_test.shape) < 3:
+                    y_test = y_test.unsqueeze(0)
                     y_test = y_test.unsqueeze(1)
-                    # y_test = torch.moveaxis(y_test, -1, -2)
+                    clean_test = clean_test.unsqueeze(0)
+
+                if len(z_test.shape) < 3:
+                    z_test = z_test.unsqueeze(0)
                     z_test = z_test.unsqueeze(1)
-                    # z_test = torch.moveaxis(z_test, -1, -2)
+
+
+                else:
+                    y_test = y_test.unsqueeze(1)
+                    z_test = z_test.unsqueeze(1)
 
                 z_test = z_test.to(device)
                 y_test = y_test.to(device)
@@ -454,8 +490,8 @@ for epoch in range(N_epochs):
 
                 """corresponds to the case where the neural network operates on recon domain"""
                 output_reco, output_sino = N2NR.forward(z_recos_test.to(N2NR.device))
-                output_reco_y, _ = N2NR.forward(y_recos_test.to(N2NR.device))
-                ### We interpret in the case when @inference method is used, the output as corrected one, as correction is in the loss function
+ 
+                output_reco_y, output_sino_y = N2NR.forward(y_recos_test.to(N2NR.device))
 
                 for i in range(len(clean_test)):
                     # Ensure the tensors are on CPU and converted to numpy arrays
@@ -463,6 +499,22 @@ for epoch in range(N_epochs):
                     output_reco_y_np = output_reco_y[i][0].detach().cpu().numpy()
                     # we also have a look at the output obtained by directly applying NW to z
                     output_reco_z_np = output_reco[i][0].detach().cpu().numpy()
+
+                # compute the difference between noisy on given data and predicted image (this should follow quite the same noise distribution as the given noise in y)
+                    n = output_sino[i] - y_test[i].to(output_sino[i].device)
+                    n_y = output_sino_y[i] - y_test[i].to(output_sino_y[i].device)
+                    ### We interpret in the case when @inference method is used, the output as corrected one, as correction is in the loss function
+                    '''now we compute earth mover distance '''
+                    # Convert images to NumPy arrays
+                    noise_test_flattened = np.array(noise_test[i]).flatten()  # Flatten the image to 1D
+                    n_flattened = np.array(n.detach().cpu()).flatten()
+                    n_y_flattened = np.array(n.detach().cpu()).flatten()
+
+
+                    # Compute Wasserstein distance between the two distributions (images)
+                    emd_z_value = wasserstein_distance(noise_test_flattened, n_flattened)
+                    emd_y_value = wasserstein_distance(noise_test_flattened, n_y_flattened)
+
 
                     # Calculate the data range for SSIM and PSNR
                     data_range = ims_test_np.max() - ims_test_np.min()
@@ -496,6 +548,20 @@ for epoch in range(N_epochs):
                     ssim_z.append(ssim_z_value)
                     psnr_y.append(psnr_y_value)
                     psnr_z.append(psnr_z_value)
+                    emd_y.append(emd_y_value)
+                    
+                    emd_z.append(emd_z_value)
+                    print('liste')
+                    print(emd_z, flush = True)
+            # append emd to emd list
+            # s
+            print(torch.mean(torch.tensor(emd_z)), flush = True)
+            all_emd_y = torch.cat(
+                                (all_emd_y, torch.tensor([torch.mean(torch.tensor(emd_y))]))
+            )
+            all_emd_z = torch.cat(
+                                 (all_emd_z, torch.tensor([torch.mean(torch.tensor(emd_z))]))
+            )
 
             # Calculate mean values and append to the tensors
             all_ssim_y = torch.cat(
@@ -512,11 +578,11 @@ for epoch in range(N_epochs):
                 (all_psnr_z, torch.tensor([torch.mean(torch.tensor(psnr_z))]))
             )
             ### get back
-            del (ssim_y, ssim_z, psnr_y, psnr_z)
+            del (ssim_y, ssim_z, psnr_y, psnr_z, emd_y, emd_z)
 
             print(psutil.cpu_percent(), flush=True)
 
-            if epoch % 200 == 0:
+            if epoch % 50 == 0:
                 with torch.no_grad():
                     plt.figure(figsize=(10, 10))
                     plt.subplot(221)
@@ -528,24 +594,27 @@ for epoch in range(N_epochs):
                     plt.colorbar()
                     plt.title("denoised corr")
                     plt.subplot(223)
-                    plt.imshow(clean_test[0].detach().cpu(), aspect="auto")
+                    plt.imshow(clean_test[0].detach().cpu())
                     plt.colorbar()
                     plt.title("clean")
                     plt.subplot(224)
                     plt.imshow(output_reco_y[0, 0].detach().cpu(), cmap="gray")
                     plt.colorbar()
                     plt.title("denoised y_reco")
+                    plt.show()
                     plt.savefig(newpath + "/image_val_" + str(epoch))
                     plt.close()
-            if epoch % 200 == 0:
+            if epoch % 40 == 0:
                 plt.imshow(output_reco[0, 0].detach().cpu(), cmap="gray")
-                plt.savefig(newpath + "/results" + str(epoch))
-                plt.close()
+                plt.show()
+                #plt.savefig(newpath + "/results" + str(epoch))
+                #plt.close()
 
-            if epoch % 200 == 0:
+            if epoch % 40 == 0:
                 plt.imshow(output_reco_y[0, 0].detach().cpu(), cmap="gray")
-                plt.savefig(newpath + "/results_y" + str(epoch))
-                plt.close()
+                plt.show()
+                #plt.savefig(newpath + "/results_y" + str(epoch))
+                #plt.close()
             """ save model weights if epoch > 200 """
             if epoch > 200:
                 if all_ssim_z[-1] > old_ssim:
@@ -570,32 +639,83 @@ for epoch in range(N_epochs):
                         f"Model weights ssim saved at epoch {epoch} to {weights_path}"
                     )
                 if all_psnr_y[-1] > old_psnr_y:
-                    old_psnr_y = all_psnr_z[-1]
+                    old_psnr_y = all_psnr_y[-1]
                     weights_path = os.path.join(weights_dir, f"psnr_model_weights_y.pth")
                     torch.save(N2NR.net_denoising.state_dict(), weights_path)
                     print(
                         f"Model weights psnr saved at epoch {epoch} to {weights_path}"
                     )
-
+                #### save weights with lowest emd    
+                if all_emd_y[-1] < old_emd_y:
+                    old_emd_y = all_emd_y[-1]
+                    weights_path = os.path.join(weights_dir, f"emd_model_weights_y.pth")
+                    torch.save(N2NR.net_denoising.state_dict(), weights_path)
+                    print(
+                        f"Model weights emd saved at epoch {epoch} to {weights_path}"
+                    )
+                if all_emd_z[-1] < old_emd_z:
+                    old_emd_z = all_emd_z[-1]
+                    weights_path = os.path.join(weights_dir, f"emd_model_weights_z.pth")
+                    torch.save(N2NR.net_denoising.state_dict(), weights_path)
+                    print(
+                        f"Model weights emd saved at epoch {epoch} to {weights_path}"
+                    )
                     
 
             #### visualize ssim and psnrs on validation data
             if epoch % 200 == 0:
-                plt.figure()
-                plt.subplot(121)
-                plt.plot(all_ssim_z.detach().cpu(), label="correction, pred on z")
-                plt.plot(all_ssim_y.detach().cpu(), label="predict on y")
+                ### save the produced ssim and psnr lists
+                np.save(newpath + f"/ssim_z_epoch.npy", all_ssim_z.detach().cpu().numpy())
+                np.save(newpath + f"/ssim_y_epoch.npy", all_ssim_y.detach().cpu().numpy())
+                np.save(newpath + f"/psnr_z_epoch.npy", all_psnr_z.detach().cpu().numpy())
+                np.save(newpath + f"/psnr_y_epoch.npy", all_psnr_y.detach().cpu().numpy())
+                np.save(newpath + f"/emd_z_epoch.npy", all_emd_z.detach().cpu().numpy())
+                np.save(newpath + f"/emd_y_epoch.npy", all_emd_y.detach().cpu().numpy())
 
-                plt.legend()
-                plt.title("SSIM validation " + args.loss_variant)
-                plt.subplot(122)
-                plt.plot(all_psnr_y.detach().cpu(), label="predict on y")
-                plt.plot(all_psnr_z.detach().cpu(), label="predict on z")
-                plt.legend()
-                plt.title("PSNR_validation " + args.loss_variant)
-                plt.savefig(newpath + "/ssim_psnr_epoch" + str(epoch))
+
+                # Define a larger figure size for better visualization
+                plt.figure(figsize=(15, 5))
+
+                # Customize fonts and colors for aesthetics
+                plt.rcParams.update({'font.size': 12, 'font.family': 'serif'})
+
+                # First subplot: SSIM Validation
+                plt.subplot(131)
+                plt.plot(all_ssim_z.detach().cpu(), label="Correction (Pred on Z)", color='darkblue', linewidth=2)
+                plt.plot(all_ssim_y.detach().cpu(), label="Prediction on Y", color='darkgreen', linestyle='--', linewidth=2)
+                plt.legend(loc='best')
+                plt.title(f"SSIM Validation", fontsize=14)
+                plt.xlabel("Epochs")
+                plt.ylabel("SSIM")
+                plt.grid(True, linestyle='--', alpha=0.7)
+                plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+
+                # Second subplot: PSNR Validation
+                plt.subplot(132)
+                plt.plot(all_psnr_z.detach().cpu(), label="Prediction on Z", color='darkred', linewidth=2)
+                plt.plot(all_psnr_y.detach().cpu(), label="Prediction on Y", color='orange', linestyle='--', linewidth=2)
+                plt.legend(loc='best')
+                plt.title(f"PSNR Validation ", fontsize=14)
+                plt.xlabel("Epochs")
+                plt.ylabel("PSNR (dB)")
+                plt.grid(True, linestyle='--', alpha=0.7)
+                plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+
+                # Third subplot: EMD Validation
+                plt.subplot(133)
+                plt.plot(all_emd_z.detach().cpu(), label="Prediction on Z", color='purple', linewidth=2)
+                plt.plot(all_emd_y.detach().cpu(), label="Prediction on Y", color='darkcyan', linestyle='--', linewidth=2)
+                plt.legend(loc='best')
+                plt.title(f"EMD Validation", fontsize=14)
+                plt.xlabel("Epochs")
+                plt.ylabel("EMD")
+                plt.grid(True, linestyle='--', alpha=0.7)
+                plt.gca().xaxis.set_major_locator(MaxNLocator(integer=True))
+
+                # Add an overall title and save the figure
+                plt.suptitle(f"SSIM, PSNR, and EMD Validation", fontsize=16, fontweight='bold')
+                plt.tight_layout(rect=[0, 0, 1, 0.95])
+                plt.savefig(newpath + "/ssim_psnr_emd_epoch" + str(epoch))
                 plt.close()
             del (ims_test_np, output_reco_y_np, output_reco_z_np)
             torch.cuda.empty_cache()
-
-# %%
