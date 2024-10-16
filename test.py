@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Testing script for Noisier2Inverse
+Script for plotting reconstructions and metrics (SSIM, PSNR, EMD)
 """
 
 # %%
@@ -25,6 +25,8 @@ from ts_algorithms import fbp, tv_min2d
 # Parsing arguments for testing
 parser = argparse.ArgumentParser(description="Arguments for testing denoising network.", add_help=False)
 parser.add_argument("-l", "--loss_variant", type=str, help="which loss variant should be used", default="DataDomain_NW_Data_MSE")
+parser.add_argument("-l2", "--loss_variant2", type=str, help="which loss variant should be used for comparison", default="DataDomain_NW_Data_MSE")
+
 parser.add_argument("-alpha", "--alpha", type=float, help="how much noisier should z be than y", default=1)
 parser.add_argument("-angles", "--angles", type=int, help="number of projection angles sinogram", default=512)
 parser.add_argument("-batch_size", "--batch_size", type=int, help="batch size for testing", default=6)
@@ -46,6 +48,8 @@ parser.add_argument(
 )
 parser.add_argument("-y_z", "--dat", type=str, help="predict on y or on z?", default="z")
 parser.add_argument("-lr","--learning_rate",type=float,help="which learning rate should be used", default=1e-5)
+parser.add_argument("-lr2","--learning_rate2",type=float,help="which learning rate should be used in second method", default=1e-5)
+
 args = parser.parse_args()
 
 # Create output directory if not exists
@@ -103,182 +107,297 @@ weights_dir = (
 )
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
-# Define the Noisier2NoiseRecon class for testing
-class Noisier2NoiseReconTest:
-    def __init__(self, device: str = "cuda:0"):
-        self.net_denoising = UNet(in_channels=1, out_channels=1).to(device)
-        self.device = device
-        self.angles = args.angles
-        self.batch_size = args.batch_size
-        self.noise = args.noise_type
-        self.noise_intensity = args.noise_intensity
-        self.test_dataset = Walnut_test(noise_type=self.noise, noise_intensity=self.noise_intensity, data_dir=args.datadir)
-        self.test_dataloader = DataLoader(self.test_dataset, batch_size=self.batch_size, shuffle=False, pin_memory=True, num_workers=0)
-
-    def forward(self, reconstruction):
-        output_denoising = self.net_denoising(reconstruction.float().to(self.device))
-        output_denoising_reco = output_denoising
-        output_denoising_sino = self.projection_tomosipo(output_denoising, sino=self.angles)
-        return output_denoising_reco, output_denoising_sino
-
-    def compute_reconstructions(self, sinograms):
-        sinograms = sinograms.squeeze(1)
-        reconstructions = torch.zeros((sinograms.shape[0], 1, sinograms.shape[-2], sinograms.shape[-2]), device=sinograms.device)
-        for i in range(sinograms.shape[0]):
-            reconstructions[i] = self.fbp_tomosipo(sinograms[i].unsqueeze(0).unsqueeze(0))
-        return reconstructions
-
-    def projection_tomosipo(self, img, sino):
-        angles = sino if isinstance(sino, int) else sino.shape[-1]
-        geo = ctgeo.Geometry.parallel_default_parameters(image_shape=(img.shape[0], img.shape[-1], img.shape[-1]), number_of_angles=angles, translate=False)
-        op = to_autograd(ct.make_operator(geo))
-        sino = op((img[:, 0]).to(self.device)).unsqueeze(1)
-        return torch.moveaxis(sino, -1, -2)
-
-    def fbp_tomosipo(self, sino):
-        angles = sino.shape[-1]
-        geo = ctgeo.Geometry.parallel_default_parameters(image_shape=(sino.shape[0], 336, 336), number_of_angles=angles, translate=False)
-        op = ct.make_operator(geo)
-        sino = torch.moveaxis(sino, -1, -2)
-        return fbp(op, sino[:, 0]).unsqueeze(1)
-
-# Initialize testing class
-N2NR = Noisier2NoiseReconTest(device=device)
-
-# Load model weights
 
 weights_path = os.path.join(weights_dir, "emd_model_weights_"+ args.dat + ".pth")  # Assuming the best weights were saved
-N2NR.net_denoising.load_state_dict(torch.load(weights_path))
-N2NR.net_denoising.eval()
-
-# Testing loop
-# Save numpy arrays
-output_reco_list = []
-clean_list = []
-noisy_list = []
-noisier_list = []
-ssim_list = []
-psnr_list = []
-emd_list = []
-
-# Testing loop
-with torch.no_grad():
-    all_ssim = []
-    all_psnr = []
-    all_emd = []
-
-    for batch, data in tqdm(enumerate(N2NR.test_dataloader)):
-        clean_test, y_test, z_test = data['clean'].squeeze(), data['noisy'].squeeze(), data['noisier'].squeeze()
 
 
-        #y_test = y_test.unsqueeze(1)
-        # y_test = torch.moveaxis(y_test, -1, -2)
-        #z_test = z_test.unsqueeze(1)
-        # z_test = torch.moveaxis(z_test, -1, -2)
-        if len(y_test.shape) < 3:
-            y_test = y_test.unsqueeze(0)
-            y_test = y_test.unsqueeze(1)
-            clean_test = clean_test.unsqueeze(0)
-
-        if len(z_test.shape) < 3:
-            z_test = z_test.unsqueeze(0)
-            z_test = z_test.unsqueeze(1)
-
-
-        else:
-            y_test = y_test.unsqueeze(1)
-            z_test = z_test.unsqueeze(1)
-
-
-        if "emd_model_weights_y.pth" in weights_path:
-            test = y_test.to(device)
-            z_test = z_test.to(device)
-
-            recos_test_z = N2NR.compute_reconstructions(z_test)
-            recos_test = N2NR.compute_reconstructions(test)
-            recos_test_y = torch.clone(recos_test)
-        else:
-            test = z_test.to(device)
-            recos_test_y = N2NR.compute_reconstructions(y_test)
-            recos_test = N2NR.compute_reconstructions(test)
-            recos_test_z = torch.clone(recos_test)
-
-
-        output_reco, _ = N2NR.forward(recos_test)
-        if 'Inference' not in weights_path:
-            output_reco = 2 * output_reco - recos_test.to(output_reco.device)
-        # Save reconstructions and compute metrics
-        print('clean:' +str(clean_test.shape))
-        for i in range(len(clean_test)):
-            ims_test_np = clean_test[i].cpu().numpy()
-            output_reco_np = output_reco[i][0].cpu().numpy()
-            recos_test_y_np = recos_test_y[i][0].cpu().numpy()
-            recos_test_z_np = recos_test_z[i][0].cpu().numpy()
-            # Save each reconstructed image
-            output_reco_list.append(output_reco_np)
-            clean_list.append(ims_test_np)
-            noisy_list.append(recos_test_y_np)
-            noisier_list.append(recos_test_z_np)
-
-            data_range = ims_test_np.max() - ims_test_np.min()
-
-            ssim_value = skm.structural_similarity(output_reco_np, ims_test_np, data_range=data_range)
-            psnr_value = skm.peak_signal_noise_ratio(output_reco_np, ims_test_np, data_range=data_range)
-
-            noise_test_flattened = np.array(data['noise'][i]).flatten()
-            n_flattened = np.array(output_reco[i][0].cpu()).flatten()
-            emd_value = wasserstein_distance(noise_test_flattened, n_flattened)
-
-            all_ssim.append(ssim_value)
-            all_psnr.append(psnr_value)
-            all_emd.append(emd_value)
-            
-            ssim_list.append(ssim_value)
-            psnr_list.append(psnr_value)
-            emd_list.append(emd_value)
-
-    print(f"Average SSIM: {np.mean(all_ssim)}")
-    print(f"Average PSNR: {np.mean(all_psnr)}")
-
-# Convert lists to numpy arrays
-output_reco_array = np.array(output_reco_list)
-clean_array = np.array(clean_list)
-recos_test_z_array = np.array(noisy_list)
-recos_test_y_array = np.array(noisier_list)
-
-
-ssim_array = np.array(ssim_list)
-psnr_array = np.array(psnr_list)
-emd_array = np.array(emd_list)
-
-
-print(output_reco_array.shape)
-print(clean_test.shape, flush = True)
 # Save the arrays as .npy files
 if "emd_model_weights_y.pth" in weights_path:
-    np.savez_compressed(
-    os.path.join(output_dir, 'output_reco_results_y.npz'),
-    output_reco_array=output_reco_array,
-    clean_test=clean_array,
-    recos_test_z=recos_test_z_array,
-    recos_test_y=recos_test_y_array
+    data = np.load(
+    os.path.join(output_dir, 'output_reco_results_y.npz')
     )
-    np.save(os.path.join(output_dir, 'ssim_y.npy'), ssim_array)
-    np.save(os.path.join(output_dir, 'psnr_y.npy'), psnr_array)
-    np.save(os.path.join(output_dir, 'emd_y.npy'), emd_array)
 
 
 # Save the arrays as .npy files
 if "emd_model_weights_z.pth" in weights_path:
-    np.savez_compressed(
-    os.path.join(output_dir, 'output_reco_results_z.npz'),
-    output_reco_array=output_reco_array,
-    clean_test=clean_array,
-    recos_test_z=recos_test_z_array,
-    recos_test_y=recos_test_y_array
+    data = np.load(
+    os.path.join(output_dir, 'output_reco_results_z.npz')
     )   
-    np.save(os.path.join(output_dir, 'ssim_z.npy'), ssim_array)
-    np.save(os.path.join(output_dir, 'psnr_z.npy'), psnr_array)
-    np.save(os.path.join(output_dir, 'emd_z.npy'), emd_array)
+
+
+# Access each array by its name
+reconstructed = data['output_reco_array']
+clean = data['clean_test']
+noisier = data['recos_test_z']
+noisy = data['recos_test_y']
+print(clean.shape, flush = True)
+print(noisy.shape, flush = True)
+print(reconstructed.shape, flush = True)
+# %%
+# Function to plot reconstructions (e.g., clean, noisy, and reconstructed images)
+def plot_reconstructions(clean, noisy, reconstructed, index, save_path):
+    plt.figure(figsize=(15, 5))
+    
+    plt.subplot(1, 3, 1)
+    plt.imshow(clean, cmap='gray')
+    plt.title('Clean Image')
+    plt.axis('off')
+
+    plt.subplot(1, 3, 2)
+    plt.imshow(noisy, cmap='gray')
+    plt.title('Noisy Image')
+    plt.axis('off')
+
+    plt.subplot(1, 3, 3)
+    plt.imshow(reconstructed, cmap='gray')
+    plt.title('Reconstructed Image')
+    plt.axis('off')
+
+    plt.suptitle(f'Reconstruction Comparison (Index: {index})')
+    
+    plt.savefig(os.path.join(save_path, f'reconstruction_{index}.png'))
+    plt.show()
 
 # %%
+
+
+# Load SSIM, PSNR, and EMD arrays
+if "emd_model_weights_z.pth" in weights_path:
+    ssim_values = np.load(os.path.join(output_dir, 'ssim_z.npy'))  # Changed ssim to ssim_values
+    psnr_values = np.load(os.path.join(output_dir, 'psnr_z.npy'))
+    emd_values = np.load(os.path.join(output_dir, 'emd_z.npy'))
+
+# Load SSIM, PSNR, and EMD arrays
+if "emd_model_weights_y.pth" in weights_path:
+    ssim_values = np.load(os.path.join(output_dir, 'ssim_y.npy'))  # Changed ssim to ssim_values
+    psnr_values = np.load(os.path.join(output_dir, 'psnr_y.npy'))
+    emd_values = np.load(os.path.join(output_dir, 'emd_y.npy'))
+
+# Function to plot the SSIM, PSNR, and EMD metrics as curves
+def plot_metrics(ssim_values, psnr_values, save_path):
+    iterations = np.arange(len(ssim_values))
+    mean_ssim = np.mean(ssim_values)
+    mean_psnr = np.mean(psnr_values)
+    
+    plt.figure(figsize=(10, 6))
+    
+    plt.subplot(3, 1, 1)
+    plt.plot(iterations, ssim_values, label='SSIM', color='blue', marker='o')
+    plt.title('SSIM Over Test Images, Mean: '+ str(mean_ssim))
+    plt.xlabel('Test Image Index')
+    plt.ylabel('SSIM')
+    plt.grid(True)
+
+    plt.subplot(3, 1, 2)
+    plt.plot(iterations, psnr_values, label='PSNR', color='green', marker='x')
+    plt.title('PSNR Over Test Images, Mean: '+ str(mean_psnr))
+    plt.xlabel('Test Image Index')
+    plt.ylabel('PSNR (dB)')
+    plt.grid(True)
+
+    plt.subplot(3, 1, 3)
+    plt.plot(iterations, emd_values, label='EMD', color='red', marker='*')
+    plt.title('EMD Over Test Images')
+    plt.xlabel('Test Image Index')
+    plt.ylabel('EMD')
+    plt.grid(True)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(save_path, 'metrics_curves.png'))
+    plt.show()
+
+# %%
+# Path to save plots
+output_plot_dir = os.path.join(output_dir, 'Plots')
+if not os.path.exists(output_plot_dir):
+    os.makedirs(output_plot_dir)
+
+def plot_reconstructions_grid(clean, noisy, reconstructed, save_path, num_images=5):
+    rows, cols = num_images, 3  # Each row will contain clean, noisy, and reconstructed images for the same index
+    fig, axs = plt.subplots(rows, cols, figsize=(5, 3 * num_images))  # Adjust the figure size accordingly
+    
+    for i in range(num_images):
+        # Plot Clean Image in column 1
+        axs[i, 0].imshow(clean[i], cmap='gray')
+        axs[i, 0].set_title('Clean Image')
+        axs[i, 0].axis('off')
+
+        # Plot Noisy Image in column 2
+        if len(noisy[i].shape) == 2:  # If noisy image has only 2 dimensions (height, width)
+            axs[i, 1].imshow(noisy[i], cmap='gray')
+        elif len(noisy[i].shape) == 3:  # If noisy image has 3 dimensions (channels, height, width)
+            axs[i, 1].imshow(noisy[i][0], cmap='gray')  # Adjust based on actual structure
+        axs[i, 1].set_title('Noisy Image')
+        axs[i, 1].axis('off')
+
+        # Plot Reconstructed Image in column 3
+        if len(reconstructed[i].shape) == 2:
+            axs[i, 2].imshow(reconstructed[i], cmap='gray')
+        elif len(reconstructed[i].shape) == 3:
+            axs[i, 2].imshow(reconstructed[i][0], cmap='gray')  # Adjust if needed
+        axs[i, 2].set_title('Reconstructed Image')
+        axs[i, 2].axis('off')
+
+    plt.suptitle(f'Reconstruction Comparison (First {num_images} Images)', fontsize=16)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    
+    # Save the figure
+    plt.savefig(os.path.join(save_path, f'reconstructions_grid.png'))
+    plt.show()
+
+
+
+plot_reconstructions_grid(clean, noisy, reconstructed, output_plot_dir, num_images=5)
+plot_metrics(ssim_values, psnr_values, output_plot_dir)
+
+
+import os
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Set up the path where the results are stored
+path = '/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Test_Results'
+files = os.listdir(path)
+
+# Initialize lists to store data for plotting
+noisy_list, clean_list = [], []
+result_sob_y_list, result_sob_z_list = [], []
+result_inf_y_list, result_inf_z_list = [], []
+result_y_list, result_z_list = [], []
+
+# Loop through files to load the appropriate data
+for f in files:
+    if 'Sob' in f and str(args.noise_sigma) in f:
+        data = np.load(os.path.join(path, f, 'output_reco_results_z.npz'))  
+        result_sob_z = data['output_reco_array']
+        clean = data['clean_test']
+        noisier = data['recos_test_z']
+        noisy = data['recos_test_y']
+        data = np.load(os.path.join(path, f, 'output_reco_results_y.npz'))
+        result_sob_y = data['output_reco_array']
+
+        ssim_values_sob_z = np.load(os.path.join(path, f,  'ssim_z.npy'))  # Changed ssim to ssim_values
+        psnr_values_sob_z = np.load(os.path.join(path, f,  'psnr_z.npy'))
+        emd_values_sob_z = np.load(os.path.join(path, f, 'emd_z.npy'))
+
+        ssim_values_sob_y = np.load(os.path.join(path, f,  'ssim_y.npy'))  # Changed ssim to ssim_values
+        psnr_values_sob_y = np.load(os.path.join(path, f,  'psnr_y.npy'))
+        emd_values_sob_y = np.load(os.path.join(path, f, 'emd_y.npy'))
+
+
+    elif 'Inf' in f and str(args.noise_sigma) in f and 'Sob' not in f:  
+
+        data = np.load(os.path.join(path, f, 'output_reco_results_z.npz'))
+        result_inf_z = data['output_reco_array']
+        clean = data['clean_test']
+        noisier = data['recos_test_z']
+        noisy = data['recos_test_y']
+        data = np.load(os.path.join(path, f, 'output_reco_results_y.npz'))
+        result_inf_y = data['output_reco_array']
+
+        ssim_values_inf_z = np.load(os.path.join(path, f,  'ssim_z.npy'))  # Changed ssim to ssim_values
+        psnr_values_inf_z = np.load(os.path.join(path, f,  'psnr_z.npy'))
+        emd_values_inf_z = np.load(os.path.join(path, f, 'emd_z.npy'))
+
+        ssim_values_inf_y = np.load(os.path.join(path, f,  'ssim_y.npy'))  # Changed ssim to ssim_values
+        psnr_values_inf_y = np.load(os.path.join(path, f,  'psnr_y.npy'))
+        emd_values_inf_y = np.load(os.path.join(path, f, 'emd_y.npy'))
+
+    elif str(args.noise_sigma) in f and 'Inf' not in f and 'Sob' not in f:
+
+        data = np.load(os.path.join(path, f, 'output_reco_results_z.npz'))
+        result_z = data['output_reco_array']
+        clean = data['clean_test']
+        noisier = data['recos_test_z']
+        noisy = data['recos_test_y']
+        data = np.load(os.path.join(path, f, 'output_reco_results_y.npz'))
+        result_y = data['output_reco_array']
+
+        ssim_values_z = np.load(os.path.join(path, f,  'ssim_z.npy'))  # Changed ssim to ssim_values
+        psnr_values_z = np.load(os.path.join(path, f,  'psnr_z.npy'))
+        emd_values_z = np.load(os.path.join(path, f, 'emd_z.npy'))
+
+        ssim_values_y = np.load(os.path.join(path, f,  'ssim_y.npy'))  # Changed ssim to ssim_values
+        psnr_values_y = np.load(os.path.join(path, f,  'psnr_y.npy'))
+        emd_values_y = np.load(os.path.join(path, f, 'emd_y.npy'))        
+
+# Now that we have all the data loaded, let's create the plot
+fig, axes = plt.subplots(5, 8, figsize=(20, 10))  # 5 rows, 8 columns
+
+# Plot the data in the specified order for each row
+for i in range(5):  # Assuming 5 rows
+    # Column 1: Noisy data
+    axes[i, 0].imshow(noisy[i], cmap='gray')
+    axes[i, 0].set_title('Noisy')
+    axes[i, 0].axis('off')
+    
+    # Column 2: Clean data
+    axes[i, 1].imshow(clean[i], cmap='gray')
+    axes[i, 1].set_title('Clean')
+    axes[i, 1].axis('off')
+    
+    # Column 3: Result Sob Z
+    axes[i, 2].imshow(result_sob_z[i], cmap='gray')
+    axes[i, 2].set_title('Result Sob Z')
+    axes[i, 2].axis('off')
+    
+    # Column 4: Result Sob Y
+    axes[i, 3].imshow(result_sob_y[i], cmap='gray')
+    axes[i, 3].set_title('Result Sob Y')
+    axes[i, 3].axis('off')
+    
+    # Column 5: Result Inf Z
+    axes[i, 4].imshow(result_inf_z[i], cmap='gray')
+    axes[i, 4].set_title('Result Inf Z')
+    axes[i, 4].axis('off')
+    
+    # Column 6: Result Inf Y
+    axes[i, 5].imshow(result_inf_y[i], cmap='gray')
+    axes[i, 5].set_title('Result Inf Y')
+    axes[i, 5].axis('off')
+    
+    # Column 7: Result Y
+    axes[i, 6].imshow(result_y[i], cmap='gray')
+    axes[i, 6].set_title('Result Y')
+    axes[i, 6].axis('off')
+    
+    # Column 8: Result Z
+    axes[i, 7].imshow(result_z[i], cmap='gray')
+    axes[i, 7].set_title('Result Z')
+    axes[i, 7].axis('off')
+
+# Adjust layout for better spacing
+plt.tight_layout()
+plt.savefig(os.path.join('/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Plots_Paper', 'Plot' + str(args.noise_sigma) +'.png'))
+
+
+
+
+plt.figure(figsize=(12, 6))
+
+# Plot PSNR values
+plt.subplot(1, 2, 1)
+plt.plot(psnr_values_sob_z, label='PSNR Sob Z')
+plt.plot(psnr_values_sob_y, label='PSNR Sob Y')
+plt.plot(psnr_values_inf_z, label='PSNR Inf Z')
+plt.plot(psnr_values_inf_y, label='PSNR Inf Y')
+plt.plot(psnr_values_z, label='PSNR Z')
+plt.plot(psnr_values_y, label='PSNR Y')
+plt.title('PSNR Values sigma ' + str(args.noise_sigma))
+plt.xlabel('Index')
+plt.ylabel('PSNR (dB)')
+plt.legend()
+
+# Plot SSIM values
+plt.subplot(1, 2, 2)
+plt.plot(ssim_values_sob_z, label='SSIM Sob Z')
+plt.plot(ssim_values_sob_y, label='SSIM Sob Y')
+plt.plot(ssim_values_inf_z, label='SSIM Inf Z')
+plt.plot(ssim_values_inf_y, label='SSIM Inf Y')
+plt.plot(ssim_values_z, label='SSIM Z')
+plt.plot(ssim_values_y, label='SSIM Y')
+plt.title('SSIM Values sigma ' + str(args.noise_sigma))
+plt.xlabel('Index')
+plt.ylabel('SSIM')
+plt.legend()
+plt.savefig(os.path.join('/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Plots_Paper/', 'Plot_ssim_psnr_' + str(args.noise_sigma) +'.png'))
