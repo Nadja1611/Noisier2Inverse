@@ -163,37 +163,37 @@ for i in range(5):  # Assuming 5 rows
     axes[i, 0].axis('off')
     
     # Column 2: Clean data
-    axes[i, 1].imshow(clean[i], cmap='gray')
+    axes[i, 1].imshow(clean[i], cmap='gray',  vmin=0, vmax=1)
     axes[i, 1].set_title('Clean')
     axes[i, 1].axis('off')
     
     # Column 3: Result Sob Z
-    axes[i, 2].imshow(result_sob_z[i], cmap='gray')
+    axes[i, 2].imshow(result_sob_z[i], cmap='gray',  vmin=0, vmax=1)
     axes[i, 2].set_title('Result Sob Z')
     axes[i, 2].axis('off')
     
     # Column 4: Result Sob Y
-    axes[i, 3].imshow(result_sob_y[i], cmap='gray')
+    axes[i, 3].imshow(result_sob_y[i], cmap='gray',  vmin=0, vmax=1)
     axes[i, 3].set_title('Result Sob Y')
     axes[i, 3].axis('off')
     
     # Column 5: Result Inf Z
-    axes[i, 4].imshow(result_inf_z[i], cmap='gray')
+    axes[i, 4].imshow(result_inf_z[i], cmap='gray',  vmin=0, vmax=1)
     axes[i, 4].set_title('Result Inf Z')
     axes[i, 4].axis('off')
     
     # Column 6: Result Inf Y
-    axes[i, 5].imshow(result_inf_y[i], cmap='gray')
+    axes[i, 5].imshow(result_inf_y[i], cmap='gray',  vmin=0, vmax=1)
     axes[i, 5].set_title('Result Inf Y')
     axes[i, 5].axis('off')
     
     # Column 7: Result Y
-    axes[i, 6].imshow(result_y[i], cmap='gray')
+    axes[i, 6].imshow(result_y[i], cmap='gray',  vmin=0, vmax=1)
     axes[i, 6].set_title('Result Y')
     axes[i, 6].axis('off')
     
     # Column 8: Result Z
-    axes[i, 7].imshow(result_z[i], cmap='gray')
+    axes[i, 7].imshow(result_z[i], cmap='gray',  vmin=0, vmax=1)
     axes[i, 7].set_title('Result Z')
     axes[i, 7].axis('off')
 
