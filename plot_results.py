@@ -159,7 +159,8 @@ result_y_list, result_z_list = [], []
 print(files, flush=True)
 # Loop through files to load the appropriate data
 for f in files:
-    if "Sob" in f and str(args.noise_sigma) in f:
+    print(f, flush=True)
+    if "Sob" in f and "sigma_" + str(args.noise_sigma) in f:
         data = np.load(os.path.join(path, f, "output_reco_results_z.npz"))
         result_sob_z = data["output_reco_array"]
         clean = data["clean_test"]
@@ -180,7 +181,7 @@ for f in files:
         psnr_values_sob_y = np.load(os.path.join(path, f, "psnr_y.npy"))
         emd_values_sob_y = np.load(os.path.join(path, f, "emd_y.npy"))
 
-    elif "Inference" in f and str(args.noise_sigma) in f and "Sob" not in f:
+    elif "Inference" in f and "sigma_" + str(args.noise_sigma) in f and "Sob" not in f:
         data = np.load(os.path.join(path, f, "output_reco_results_z.npz"))
         result_inf_z = data["output_reco_array"]
         clean = data["clean_test"]
@@ -201,7 +202,7 @@ for f in files:
         psnr_values_inf_y = np.load(os.path.join(path, f, "psnr_y.npy"))
         emd_values_inf_y = np.load(os.path.join(path, f, "emd_y.npy"))
 
-    elif str(args.noise_sigma) in f and "Inf" not in f and "Sob" not in f:
+    elif "sigma_" + str(args.noise_sigma) in f and "Inf" not in f and "Sob" not in f:
         print(f + " we load inference weights for " + str(args.noise_sigma))
         data = np.load(os.path.join(path, f, "output_reco_results_z.npz"))
         result_z = data["output_reco_array"]
@@ -226,7 +227,8 @@ for f in files:
 
 ##### load results of noise2inverse
 for f in files_n2i:
-    if str(args.noise_sigma) in f:
+    if "sigma_" + str(args.noise_sigma) in f:
+        print("we load n2i", flush=True)
         data = np.load(os.path.join(path2, f, "output_reco_results.npz"))
         result_n2i = data["output_reco_array"]
         ssim_values_n2i = np.load(
@@ -235,66 +237,98 @@ for f in files_n2i:
         psnr_values_n2i = np.load(os.path.join(path2, f, "psnr_z.npy"))
 
 
-# Now that we have all the data loaded, let's create the plot
-fig, axes = plt.subplots(5, 9, figsize=(20, 10))  # 5 rows, 8 columns
+fig, axes = plt.subplots(
+    5, 9, figsize=(25, 12), gridspec_kw={"wspace": 0.001, "hspace": 0.01}
+)  # Further reduced spacing between images
+
+# Define the titles for each column
+titles = [
+    "noisy ($\\sigma$ = " + str(args.noise_sigma) + ')',
+    "clean",
+    "ours sobo z",
+    "ours sobo y",
+    "ours z",
+    "ours y",
+    "z",
+    "y",
+    "N2I",
+]
+
+# Create a figure and axes with specified size and no spacing
+fig, axes = plt.subplots(3, 9, figsize=(15, 4.5), constrained_layout=False)
+
+# Adjust spacing to remove gaps between subplots
+plt.subplots_adjust(wspace=0, hspace=0)  # Remove width and height space
 
 # Plot the data in the specified order for each row
-for i in range(5):  # Assuming 5 rows
-    # Column 1: Noisy data
-    axes[i, 0].imshow(noisy[i], cmap="gray")
-    axes[i, 0].set_title("Noisy")
-    axes[i, 0].axis("off")
+for i in range(3):  # Now only 3 rows
+    for j in range(9):  # 9 columns
+        # Column content based on j index, replacing i with i + 5
+        if j == 0:
+            axes[i, j].imshow(noisy[i + 5][40:-40, 40:-40], cmap="gray")  # Adjusted index for noisy
+        elif j == 1:
+            axes[i, j].imshow(clean[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1)  # Adjusted index for clean
+        elif j == 2:
+            axes[i, j].imshow(
+                result_sob_z[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for sobel z
+            )
+        elif j == 3:
+            axes[i, j].imshow(
+                result_sob_y[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for sobel y
+            )
+        elif j == 4:
+            axes[i, j].imshow(
+                result_inf_z[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for inf z
+            )
+        elif j == 5:
+            axes[i, j].imshow(
+                result_inf_y[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for inf y
+            )
+        elif j == 6:
+            axes[i, j].imshow(
+                result_z[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for y
+            )
+        elif j == 7:
+            axes[i, j].imshow(
+                result_y[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for z
+            )
+        elif j == 8:
+            axes[i, j].imshow(
+                result_n2i[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for Noisier2Inverse
+            )
 
-    # Column 2: Clean data
-    axes[i, 1].imshow(clean[i], cmap="gray", vmin=0, vmax=1)
-    axes[i, 1].set_title("Clean")
-    axes[i, 1].axis("off")
+        # Remove axis for cleaner view
+        axes[i, j].axis("off")
 
-    # Column 3: Result Sob Z
-    axes[i, 2].imshow(result_sob_z[i], cmap="gray", vmin=0, vmax=1)
-    axes[i, 2].set_title("Result Sob Z")
-    axes[i, 2].axis("off")
+        # Set title only for the first row
+        if i == 0:
+            axes[i, j].set_title(titles[j], fontsize=12)
 
-    # Column 4: Result Sob Y
-    axes[i, 3].imshow(result_sob_y[i], cmap="gray", vmin=0, vmax=1)
-    axes[i, 3].set_title("Result Sob Y")
-    axes[i, 3].axis("off")
-
-    # Column 5: Result Inf Z
-    axes[i, 4].imshow(result_inf_z[i], cmap="gray", vmin=0, vmax=1)
-    axes[i, 4].set_title("Result Inf Z")
-    axes[i, 4].axis("off")
-
-    # Column 6: Result Inf Y
-    axes[i, 5].imshow(result_inf_y[i], cmap="gray", vmin=0, vmax=1)
-    axes[i, 5].set_title("Result Inf Y")
-    axes[i, 5].axis("off")
-
-    # Column 7: Result Y
-    axes[i, 6].imshow(result_y[i], cmap="gray", vmin=0, vmax=1)
-    axes[i, 6].set_title("Result Y")
-    axes[i, 6].axis("off")
-
-    # Column 8: Result Z
-    axes[i, 7].imshow(result_z[i], cmap="gray", vmin=0, vmax=1)
-    axes[i, 7].set_title("Result Z")
-    axes[i, 7].axis("off")
-
-    # Column 9: Result n2i
-    axes[i, 8].imshow(result_n2i[i], cmap="gray", vmin=0, vmax=1)
-    axes[i, 8].set_title("Result N2I")
-    axes[i, 8].axis("off")
-
-# Adjust layout for better spacing
+# Set the background color for better visual contrast
+fig.patch.set_facecolor('white')
+# Adjust layout for better spacing and save the figure
 plt.tight_layout()
+
 if args.dataset == "Heart":
+    print("heart", flush=True)
+    plt.savefig(
+        os.path.join(
+            "/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Plots_Paper",
+            "Plot" + str(args.noise_sigma) + ".svg",
+        ))
     plt.savefig(
         os.path.join(
             "/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Plots_Paper",
             "Plot" + str(args.noise_sigma) + ".png",
-        )
+        )    
     )
 else:
+    plt.savefig(
+        os.path.join(
+            "/home/nadja/tomo_project/Results_Noisier2Inverse/Plots_Paper",
+            "Plot" + str(args.noise_sigma) + ".svg",
+        )
+    )
     plt.savefig(
         os.path.join(
             "/home/nadja/tomo_project/Results_Noisier2Inverse/Plots_Paper",
@@ -307,13 +341,13 @@ plt.figure(figsize=(12, 6))
 
 # Plot PSNR values
 plt.subplot(1, 2, 1)
-plt.plot(psnr_values_sob_z, label="PSNR Sob Z")
-plt.plot(psnr_values_sob_y, label="PSNR Sob Y")
-plt.plot(psnr_values_inf_z, label="PSNR Inf Z")
-plt.plot(psnr_values_inf_y, label="PSNR Inf Y")
-plt.plot(psnr_values_z, label="PSNR Z")
-plt.plot(psnr_values_y, label="PSNR Y")
-plt.plot(psnr_values_n2i, label="PSNR N2I")
+plt.plot(psnr_values_sob_z, label="PSNR Sob z " + str(np.mean(psnr_values_sob_z)))
+plt.plot(psnr_values_sob_y, label="PSNR Sob y" + str(np.mean(psnr_values_sob_y)))
+plt.plot(psnr_values_inf_z, label="PSNR Inf z" + str(np.mean(psnr_values_inf_z)))
+plt.plot(psnr_values_inf_y, label="PSNR Inf y" + str(np.mean(psnr_values_inf_y)))
+plt.plot(psnr_values_z, label="PSNR z" + str(np.mean(psnr_values_inf_z)))
+plt.plot(psnr_values_y, label="PSNR y" + str(np.mean(psnr_values_y)))
+plt.plot(psnr_values_n2i, label="PSNR N2I" + str(np.mean(psnr_values_n2i)))
 plt.title("PSNR Values sigma " + str(args.noise_sigma))
 plt.xlabel("Index")
 plt.ylabel("PSNR (dB)")
@@ -321,17 +355,19 @@ plt.legend()
 
 # Plot SSIM values
 plt.subplot(1, 2, 2)
-plt.plot(ssim_values_sob_z, label="SSIM Sob Z")
-plt.plot(ssim_values_sob_y, label="SSIM Sob Y")
-plt.plot(ssim_values_inf_z, label="SSIM Inf Z")
-plt.plot(ssim_values_inf_y, label="SSIM Inf Y")
-plt.plot(ssim_values_z, label="SSIM Z")
-plt.plot(ssim_values_y, label="SSIM Y")
-plt.plot(ssim_values_n2i, label="SSIM N2I")
+plt.plot(ssim_values_sob_z, label="SSIM Sob z" + str(np.mean(ssim_values_sob_z)))
+plt.plot(ssim_values_sob_y, label="SSIM Sob y" + str(np.mean(ssim_values_sob_y)))
+plt.plot(ssim_values_inf_z, label="SSIM Inf z" + str(np.mean(ssim_values_inf_z)))
+plt.plot(ssim_values_inf_y, label="SSIM Inf y" + str(np.mean(ssim_values_inf_y)))
+plt.plot(ssim_values_z, label="SSIM z" + str(np.mean(ssim_values_z)))
+plt.plot(ssim_values_y, label="SSIM y" + str(np.mean(ssim_values_y)))
+plt.plot(ssim_values_n2i, label="SSIM N2I" + str(np.mean(ssim_values_n2i)))
 plt.title("SSIM Values sigma " + str(args.noise_sigma))
 plt.xlabel("Index")
 plt.ylabel("SSIM")
 plt.legend()
+
+
 if args.dataset == "Heart":
     plt.savefig(
         os.path.join(
