@@ -241,60 +241,63 @@ fig, axes = plt.subplots(
     5, 9, figsize=(25, 12), gridspec_kw={"wspace": 0.001, "hspace": 0.01}
 )  # Further reduced spacing between images
 
+"""------------make z plots--------------"""
+
 # Define the titles for each column
 titles = [
-    "noisy ($\\sigma$ = " + str(args.noise_sigma) + ')',
+    "noisy ($\\sigma$ = " + str(args.noise_sigma) + ")",
     "clean",
     "ours sobo z",
-    "ours sobo y",
     "ours z",
-    "ours y",
     "z",
-    "y",
     "N2I",
 ]
 
 # Create a figure and axes with specified size and no spacing
-fig, axes = plt.subplots(3, 9, figsize=(15, 4.5), constrained_layout=False)
+fig, axes = plt.subplots(2, 6, figsize=(10, 3.5), constrained_layout=False)
 
 # Adjust spacing to remove gaps between subplots
 plt.subplots_adjust(wspace=0, hspace=0)  # Remove width and height space
 
 # Plot the data in the specified order for each row
-for i in range(3):  # Now only 3 rows
-    for j in range(9):  # 9 columns
+for i in range(2):  # Now only 3 rows
+    for j in range(6):  # 9 columns
         # Column content based on j index, replacing i with i + 5
         if j == 0:
-            axes[i, j].imshow(noisy[i + 5][40:-40, 40:-40], cmap="gray")  # Adjusted index for noisy
+            axes[i, j].imshow(
+                noisy[i + 5][40:-40, 40:-40], cmap="gray"
+            )  # Adjusted index for noisy
         elif j == 1:
-            axes[i, j].imshow(clean[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1)  # Adjusted index for clean
+            axes[i, j].imshow(
+                clean[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1
+            )  # Adjusted index for clean
         elif j == 2:
             axes[i, j].imshow(
-                result_sob_z[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for sobel z
+                result_sob_z[i + 5][40:-40, 40:-40],
+                cmap="gray",
+                vmin=0,
+                vmax=1,  # Adjusted index for sobel z
             )
         elif j == 3:
             axes[i, j].imshow(
-                result_sob_y[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for sobel y
+                result_inf_z[i + 5][40:-40, 40:-40],
+                cmap="gray",
+                vmin=0,
+                vmax=1,  # Adjusted index for sobel y
             )
         elif j == 4:
             axes[i, j].imshow(
-                result_inf_z[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for inf z
+                result_z[i + 5][40:-40, 40:-40],
+                cmap="gray",
+                vmin=0,
+                vmax=1,  # Adjusted index for inf z
             )
         elif j == 5:
             axes[i, j].imshow(
-                result_inf_y[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for inf y
-            )
-        elif j == 6:
-            axes[i, j].imshow(
-                result_z[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for y
-            )
-        elif j == 7:
-            axes[i, j].imshow(
-                result_y[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for z
-            )
-        elif j == 8:
-            axes[i, j].imshow(
-                result_n2i[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1  # Adjusted index for Noisier2Inverse
+                result_n2i[i + 5][40:-40, 40:-40],
+                cmap="gray",
+                vmin=0,
+                vmax=1,  # Adjusted index for inf z
             )
 
         # Remove axis for cleaner view
@@ -305,7 +308,7 @@ for i in range(3):  # Now only 3 rows
             axes[i, j].set_title(titles[j], fontsize=12)
 
 # Set the background color for better visual contrast
-fig.patch.set_facecolor('white')
+fig.patch.set_facecolor("white")
 # Adjust layout for better spacing and save the figure
 plt.tight_layout()
 
@@ -314,25 +317,126 @@ if args.dataset == "Heart":
     plt.savefig(
         os.path.join(
             "/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Plots_Paper",
-            "Plot" + str(args.noise_sigma) + ".svg",
-        ))
+            "Plot" + str(args.noise_sigma) + "_z.svg",
+        )
+    )
     plt.savefig(
         os.path.join(
             "/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Plots_Paper",
-            "Plot" + str(args.noise_sigma) + ".png",
-        )    
+            "Plot" + str(args.noise_sigma) + "_z.png",
+        )
     )
 else:
     plt.savefig(
         os.path.join(
             "/home/nadja/tomo_project/Results_Noisier2Inverse/Plots_Paper",
-            "Plot" + str(args.noise_sigma) + ".svg",
+            "Plot" + str(args.noise_sigma) + "_z.svg",
         )
     )
     plt.savefig(
         os.path.join(
             "/home/nadja/tomo_project/Results_Noisier2Inverse/Plots_Paper",
-            "Plot" + str(args.noise_sigma) + ".png",
+            "Plot" + str(args.noise_sigma) + "_z.png",
+        )
+    )
+
+
+""" make y plots"""
+
+# Define the titles for each column
+titles = [
+    "noisy ($\\sigma$ = " + str(args.noise_sigma) + ")",
+    "clean",
+    "ours sobo y",
+    "ours y",
+    "y",
+    "N2I",
+]
+
+# Create a figure and axes with specified size and no spacing
+fig, axes = plt.subplots(2, 6, figsize=(10, 3.5), constrained_layout=False)
+
+# Adjust spacing to remove gaps between subplots
+plt.subplots_adjust(wspace=0, hspace=0)  # Remove width and height space
+
+# Plot the data in the specified order for each row
+for i in range(2):  # Now only 3 rows
+    for j in range(6):  # 9 columns
+        # Column content based on j index, replacing i with i + 5
+        if j == 0:
+            axes[i, j].imshow(
+                noisy[i + 5][40:-40, 40:-40], cmap="gray"
+            )  # Adjusted index for noisy
+        elif j == 1:
+            axes[i, j].imshow(
+                clean[i + 5][40:-40, 40:-40], cmap="gray", vmin=0, vmax=1
+            )  # Adjusted index for clean
+        elif j == 2:
+            axes[i, j].imshow(
+                result_sob_y[i + 5][40:-40, 40:-40],
+                cmap="gray",
+                vmin=0,
+                vmax=1,  # Adjusted index for sobel z
+            )
+        elif j == 3:
+            axes[i, j].imshow(
+                result_inf_y[i + 5][40:-40, 40:-40],
+                cmap="gray",
+                vmin=0,
+                vmax=1,  # Adjusted index for sobel y
+            )
+        elif j == 4:
+            axes[i, j].imshow(
+                result_y[i + 5][40:-40, 40:-40],
+                cmap="gray",
+                vmin=0,
+                vmax=1,  # Adjusted index for inf z
+            )
+        elif j == 5:
+            axes[i, j].imshow(
+                result_n2i[i + 5][40:-40, 40:-40],
+                cmap="gray",
+                vmin=0,
+                vmax=1,  # Adjusted index for inf z
+            )
+
+        # Remove axis for cleaner view
+        axes[i, j].axis("off")
+
+        # Set title only for the first row
+        if i == 0:
+            axes[i, j].set_title(titles[j], fontsize=12)
+
+# Set the background color for better visual contrast
+fig.patch.set_facecolor("white")
+# Adjust layout for better spacing and save the figure
+plt.tight_layout()
+
+if args.dataset == "Heart":
+    print("heart", flush=True)
+    plt.savefig(
+        os.path.join(
+            "/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Plots_Paper",
+            "Plot" + str(args.noise_sigma) + "_y.svg",
+        )
+    )
+    plt.savefig(
+        os.path.join(
+            "/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Plots_Paper",
+            "Plot" + str(args.noise_sigma) + "_y.png",
+        )
+    )
+else:
+    plt.savefig(
+        os.path.join(
+            "/home/nadja/tomo_project/Results_Noisier2Inverse/Plots_Paper",
+            "Plot" + str(args.noise_sigma) + "_y.svg",
+        )
+    )
+    plt.savefig(
+        os.path.join(
+            "/home/nadja/tomo_project/Results_Noisier2Inverse/Plots_Paper",
+            "Plot" + str(args.noise_sigma) + "_y.png",
         )
     )
 
@@ -382,3 +486,124 @@ else:
             "Plot_ssim_psnr_" + str(args.noise_sigma) + ".png",
         )
     )
+
+
+import matplotlib.pyplot as plt
+import os
+
+# Define vmin and vmax based on the dataset
+if args.dataset == "Heart":
+    vmin, vmax = -0.2, 0.2
+else:
+    vmin, vmax = -0.8, 0.8
+
+
+# Function to create and save plots
+def create_difference_plots(titles, result_list, noise_sigma, plot_type):
+    # Create a larger figure and axes with specified size, adjusting for 4 columns
+    figsize = (
+        (18, 8) if plot_type == "sigma" else (16, 6)
+    )  # Increased for better visibility
+    fig, axes = plt.subplots(2, 4, figsize=figsize, constrained_layout=False)
+    plt.subplots_adjust(wspace=0.02, hspace=0.1)  # Adjusted spacing for colorbars
+
+    # Plot the data in the specified order for each row, skipping noisy and clean
+    for i in range(2):
+        for j in range(4):
+            if j == 0:
+                diff = (
+                    result_list[0][i + 5][40:-40, 40:-40] - clean[i + 5][40:-40, 40:-40]
+                )
+                im = axes[i, j].imshow(diff, cmap="coolwarm", vmin=vmin, vmax=vmax)
+            elif j == 1:
+                diff = (
+                    result_list[1][i + 5][40:-40, 40:-40] - clean[i + 5][40:-40, 40:-40]
+                )
+                im = axes[i, j].imshow(diff, cmap="coolwarm", vmin=vmin, vmax=vmax)
+            elif j == 2:
+                diff = (
+                    result_list[2][i + 5][40:-40, 40:-40] - clean[i + 5][40:-40, 40:-40]
+                )
+                im = axes[i, j].imshow(diff, cmap="coolwarm", vmin=vmin, vmax=vmax)
+            elif j == 3:
+                diff = (
+                    result_list[3][i + 5][40:-40, 40:-40] - clean[i + 5][40:-40, 40:-40]
+                )
+                im = axes[i, j].imshow(diff, cmap="coolwarm", vmin=vmin, vmax=vmax)
+
+            # Add colorbar to each difference plot
+            fig.colorbar(
+                im, ax=axes[i, j], orientation="vertical", fraction=0.046, pad=0.02
+            )
+
+            # Remove axis for cleaner view
+            axes[i, j].axis("off")
+
+            # Set title only for the first row with smaller font size
+            if i == 0:
+                axes[i, j].set_title(titles[j], fontsize=10)
+
+    # Set the absolute title with Greek letter sigma
+    fig.suptitle(
+        r"$\sigma = $" + str(noise_sigma), fontsize=16, y=1.05
+    )  # Increased font size
+
+    # Set the background color for better visual contrast
+    fig.patch.set_facecolor("white")
+
+    # Adjust layout for better spacing and save the figure
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.85)  # Adjust the top space for the title
+
+    # Save the figure based on dataset
+    if args.dataset == "Heart":
+        plt.savefig(
+            os.path.join(
+                "/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Plots_Paper",
+                f"Plot{noise_sigma}_diff_{plot_type}.svg",
+            )
+        )
+        plt.savefig(
+            os.path.join(
+                "/home/nadja/tomo_project/Results_Noisier2Inverse_Heart/Plots_Paper",
+                f"Plot{noise_sigma}_diff_{plot_type}.png",
+            )
+        )
+    else:
+        plt.savefig(
+            os.path.join(
+                "/home/nadja/tomo_project/Results_Noisier2Inverse/Plots_Paper",
+                f"Plot{noise_sigma}_diff_{plot_type}.svg",
+            )
+        )
+        plt.savefig(
+            os.path.join(
+                "/home/nadja/tomo_project/Results_Noisier2Inverse/Plots_Paper",
+                f"Plot{noise_sigma}_diff_{plot_type}.png",
+            )
+        )
+
+
+# Titles for each set of plots
+titles_z = [
+    "difference: ours sobo z - clean",
+    "difference: ours z - clean",
+    "difference: z - clean",
+    "difference: N2I - clean",
+]
+
+titles_y = [
+    "difference: ours sobo y - clean",
+    "difference: ours y - clean",
+    "difference: y - clean",
+    "difference: N2I - clean",
+]
+
+# Create and save z difference plots
+create_difference_plots(
+    titles_z, [result_sob_z, result_inf_z, result_z, result_n2i], args.noise_sigma, "z"
+)
+# Create and save y difference plots
+create_difference_plots(
+    titles_y, [result_sob_y, result_inf_y, result_y, result_n2i], args.noise_sigma, "y"
+)
